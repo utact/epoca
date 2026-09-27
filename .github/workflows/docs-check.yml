@@ -1,0 +1,25 @@
+name: Documentation checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-style:
+    name: docs-style
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Test documentation checker
+        run: python tests/docs-style/test-check-docs.py
+      - name: Check documentation
+        run: python scripts/check-docs.py
