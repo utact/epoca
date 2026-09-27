@@ -11,3 +11,7 @@
 - [작업 흐름](docs/workflow.md): 문서 책임·작업 절차·작성 기준
 - [기술 방향](docs/engineering/strategy.md): 공통 기술 제약과 개발 방향
 - [에이전트 지침](AGENTS.md): AI의 작업 시작점
+
+## Specifications
+
+- [개인 색상 선택](specs/player-color/spec.md): 가입 시 색상 추첨과 확정 흐름 초안
