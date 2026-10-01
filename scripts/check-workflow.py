@@ -1,13 +1,14 @@
-"""Validate research/experiment records and selected commit titles (stdlib only)."""
+"""Validate research/experiment records, local Markdown links and commit messages (stdlib only)."""
 
 import argparse
+import html
 import json
 import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 SECTIONS = {
@@ -29,6 +30,8 @@ MESSAGES = {
     "WFL003": "메타정보의 필드·값·자료형을 확인하세요.",
     "WFL004": "계획·입력·고정 근거의 연결을 확인하세요.",
     "WFL005": "커밋 제목을 type(scope): 한국어 요약 형식으로 작성하세요. scope는 선택입니다.",
+    "WFL006": "커밋 본문의 목록·빈 줄·중복·작성자 표기를 확인하세요.",
+    "WFL007": "로컬 링크의 파일과 절 앵커를 확인하세요.",
 }
 KEBAB = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 TITLE = re.compile(rf"^(?:chore|docs|experiment|feat|fix|perf|refactor|test)(?:\({KEBAB}\))?: \S(?:.*\S)?$")
@@ -42,6 +45,79 @@ def discover(root):
     names = set(git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard",
                     "--", "research", "experiments").split("\0"))
     return sorted(root / name for name in names if name.lower().endswith(".md") and (root / name).is_file())
+
+
+def markdown_files(root):
+    names = set(git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0"))
+    return sorted(root / name for name in names if name.lower().endswith(".md") and (root / name).is_file())
+
+
+def markdown_prose(text):
+    # Keep line numbers stable while excluding examples and comments from link checks.
+    text = re.sub(r"<!--.*?-->", lambda m: "\n" * m[0].count("\n"), text, flags=re.S)
+    result, fence = [], None
+    for line in text.splitlines():
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not marker[2].strip():
+                fence = None
+            result.append("")
+        elif marker:
+            fence = marker[1]
+            result.append("")
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
+def heading_anchors(text):
+    prose = markdown_prose(text)
+    anchors, used = set(), set()
+    for line in prose.splitlines():
+        match = re.match(r"^ {0,3}#{1,6}\s+(.+?)(?:\s+#+)?\s*$", line)
+        if not match:
+            continue
+        label = re.sub(r"!?\[([^\]]+)\]\([^)]*\)", r"\1", match[1])
+        label = html.unescape(re.sub(r"<[^>]*>", "", label))
+        slug = re.sub(r"[^\w\- ]", "", label.lower()).replace(" ", "-")
+        candidate, suffix = slug, 0
+        while candidate in used:
+            suffix += 1
+            candidate = f"{slug}-{suffix}"
+        used.add(candidate)
+        anchors.add(candidate)
+    # Only literal HTML anchors are supported, not ids inside inline-code examples.
+    prose = re.sub(r"(`+).*?\1", "", prose)
+    anchors.update(re.findall(r'<[\w-]+\b[^>]*\b(?:id|name)=[\"\']([^\"\']+)[\"\']', prose))
+    return anchors
+
+
+LINK = re.compile(r'(?<!\\)!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()\\]|\([^()\n]*\))+))(?:\s+[\"\'][^\n]*?[\"\'])?\s*\)')
+
+
+def check_links(root, path):
+    text = path.read_text(encoding="utf-8-sig")
+    prose = markdown_prose(text)
+    issues = []
+    for number, line in enumerate(prose.splitlines(), 1):
+        line = re.sub(r"(`+).*?\1", "", line)
+        for match in LINK.finditer(line):
+            target = html.unescape(match[1] or match[2])
+            try:
+                parts = urlsplit(target)
+            except ValueError:
+                issues.append((number, "WFL007", f"잘못된 링크: {target}"))
+                continue
+            if parts.scheme or parts.netloc:
+                continue
+            relative = unquote(parts.path)
+            destination = (path.parent / relative).resolve() if relative else path.resolve()
+            if not destination.is_relative_to(root) or not destination.exists():
+                issues.append((number, "WFL007", f"저장소 내부 대상 필요: {target}"))
+            elif parts.fragment and destination.is_file() and destination.suffix.lower() == ".md":
+                if unquote(parts.fragment) not in heading_anchors(destination.read_text(encoding="utf-8-sig")):
+                    issues.append((number, "WFL007", f"없는 절 앵커: {target}"))
+    return issues
 
 
 def kind_for(name):
@@ -215,7 +291,47 @@ def valid_commit_title(title):
     return bool(TITLE.fullmatch(title) and re.search(r"[가-힣]", title) and not re.search(r"[.!?。！？]$", title))
 
 
-def commit_titles(root, base, head):
+def check_commit_message(message):
+    lines = message.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    title = lines[0] if lines else ""
+    issues = []
+    if not valid_commit_title(title):
+        issues.append((1, "WFL005", repr(title)))
+    body_end = len(lines)
+    trailer = re.compile(r"[A-Za-z][A-Za-z0-9-]*: \S.*")
+    while body_end > 1 and trailer.fullmatch(lines[body_end - 1]):
+        body_end -= 1
+    if body_end < len(lines):
+        if body_end > 1 and not lines[body_end - 1].strip():
+            body_end -= 1
+        else:
+            issues.append((body_end + 1, "WFL006", "트레일러 앞 구분용 빈 줄 필요"))
+    # Git treats everything before the first blank line as the subject.
+    if body_end > 1 and lines[1].strip():
+        issues.append((2, "WFL006", "제목과 본문 사이 빈 줄 필요"))
+        body_start = 1
+    else:
+        body_start = 2
+    seen = {title.split(": ", 1)[-1].strip()}
+    for number, line in enumerate(lines[body_start:body_end], body_start + 1):
+        if not re.fullmatch(r"- \S(?:.*\S)?", line):
+            issues.append((number, "WFL006", "항목 사이 빈 줄 없이 한 줄씩의 '- 내용' 항목 필요"))
+            continue
+        value = line[2:]
+        if value in seen:
+            issues.append((number, "WFL006", "제목 요약 또는 본문 항목과 완전 중복"))
+        seen.add(value)
+    tools = r"(?:claude|anthropic|openai|chatgpt|codex|copilot|cursor|gemini|devin|aider)"
+    forbidden = re.compile(rf"(?:co-authored-by:.*\b{tools}\b|generated (?:by|with).*\b{tools}\b|{tools}[\w-]*-session:|claude\.ai/code|chatgpt\.com/codex)", re.I)
+    for number, line in enumerate(lines, 1):
+        if forbidden.search(line):
+            issues.append((number, "WFL006", "도구·모델 작성자 표기 또는 세션 링크"))
+    return issues
+
+
+def commit_messages(root, base, head):
     # Resolve options to commit hashes before passing them to the range query.
     head_hash = git(root, "rev-parse", "--verify", "--end-of-options", head + "^{commit}").strip()
     if re.fullmatch(r"0{40}|0{64}", base):
@@ -223,8 +339,13 @@ def commit_titles(root, base, head):
     else:
         base_hash = git(root, "rev-parse", "--verify", "--end-of-options", base + "^{commit}").strip()
         args = [base_hash + ".." + head_hash]
-    output = git(root, "log", "--no-merges", "--format=%H%x00%s", *args)
-    return [tuple(line.split("\0", 1)) for line in output.splitlines()]
+    output = git(root, "log", "--no-merges", "-z", "--format=%H%x00%B", *args)
+    fields = output.split("\0")
+    return [(fields[i], fields[i + 1]) for i in range(0, len(fields) - 1, 2)]
+
+
+def commit_titles(root, base, head):
+    return [(sha, message.splitlines()[0]) for sha, message in commit_messages(root, base, head)]
 
 
 def main(argv=None):
@@ -237,6 +358,7 @@ def main(argv=None):
     try:
         root = args.root.resolve()
         paths = discover(root)
+        documents = markdown_files(root)
         count, records = 0, 0
         for path in paths:
             if path.name != "README.md":
@@ -244,18 +366,21 @@ def main(argv=None):
             for line, code, detail in check_record(root, path):
                 print(f"{path.relative_to(root)}:{line}: {code} {MESSAGES[code]} {detail}")
                 count += 1
-        messages = commit_titles(root, args.commit_base, args.commit_head) if args.commit_base else []
+        for path in documents:
+            for line, code, detail in check_links(root, path):
+                print(f"{path.relative_to(root)}:{line}: {code} {MESSAGES[code]} {detail}")
+                count += 1
+        messages = commit_messages(root, args.commit_base, args.commit_head) if args.commit_base else []
         if args.message_file:
-            lines = args.message_file.read_text(encoding="utf-8-sig").splitlines()
-            messages.append((str(args.message_file), lines[0] if lines else ""))
-        for name, title in messages:
-            if not valid_commit_title(title):
-                print(f"{name}:1: WFL005 {MESSAGES['WFL005']} 관측: {title!r}")
+            messages.append((str(args.message_file), args.message_file.read_text(encoding="utf-8-sig")))
+        for name, message in messages:
+            for line, code, detail in check_commit_message(message):
+                print(f"{name}:{line}: {code} {MESSAGES[code]} {detail}")
                 count += 1
     except (OSError, UnicodeError, subprocess.CalledProcessError) as error:
         print(f"작업 기록 검사 실행 오류: {error}", file=sys.stderr)
         return 2
-    print(f"기록 {records}개·커밋 메시지 {len(messages)}개 검사, 위반 {count}건. 의미·근거 검토는 별도 수행.")
+    print(f"기록 {records}개·문서 링크 {len(documents)}개 파일·커밋 메시지 {len(messages)}개 검사, 위반 {count}건. 의미·근거 검토는 별도 수행.")
     return 1 if count else 0
 
 

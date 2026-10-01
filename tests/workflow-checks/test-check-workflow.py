@@ -236,7 +236,7 @@ class WorkflowChecks(unittest.TestCase):
             command = [sys.executable, str(SCRIPT), "--root", str(root)]
             result = subprocess.run(command, env=ENV, capture_output=True, encoding="utf-8")
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            message = write(root, "commit-message.txt", "docs: 기준 정의\n\n형식 검사 대상은 첫 줄이다.\n")
+            message = write(root, "commit-message.txt", "docs: 기준 정의\n\n- 역할별 문서 위치 추가\n")
             result = subprocess.run(command + ["--message-file", str(message)], env=ENV, capture_output=True)
             self.assertEqual(0, result.returncode)
             message.write_text("bad title\n", encoding="utf-8")
@@ -267,6 +267,99 @@ class WorkflowChecks(unittest.TestCase):
             self.assertEqual(1, len(CHECKER.commit_titles(root, "0" * 40, "HEAD")))
             result = subprocess.run(command[:-1] + ["missing-ref"], env=ENV, capture_output=True)
             self.assertEqual(2, result.returncode)
+
+    def test_commit_body_normal_and_failures(self):
+        title = "docs: 기준 정의"
+        for message in (title, title + "\n\n- 역할별 문서 위치 추가\n- 입력 경로 검사 통과\n",
+                        title + "\n\n- 참고: https://example.com/config?v=1.2\n",
+                        title + "\n\n- 경로 연결 수정\n\nCo-Authored-By: Kim <kim@example.invalid>\n",
+                        title + "\n\nCo-Authored-By: Kim <kim@example.invalid>\n"):
+            with self.subTest(message=message):
+                self.assertEqual([], CHECKER.check_commit_message(message))
+        cases = (
+            title + "\n- 역할별 문서 위치 추가",
+            title + "\nCo-Authored-By: Kim <kim@example.invalid>",
+            title + "\n\n- 역할별 문서 위치 추가\n\n- 입력 경로 검사 통과",
+            title + "\n\n역할별 문서 위치를 추가했다. 검사를 통과했다.",
+            title + "\n\n- 역할별 문서 위치 추가\n  두 번째 줄",
+            title + "\n\n- 기준 정의",
+            title + "\n\n- 연결 수정\n- 연결 수정",
+            title + "\n\n- 연결 수정\nCo-Authored-By: Kim <kim@example.invalid>",
+            title + "\n\n- 연결 수정\n\nCo-Authored-By: Codex <codex@example.invalid>",
+            title + "\n\n- Generated with Claude",
+            title + "\n\n- https://chatgpt.com/codex/tasks/example",
+        )
+        for message in cases:
+            with self.subTest(message=message):
+                self.assertIn("WFL006", [code for _, code, _ in CHECKER.check_commit_message(message)])
+
+    def test_real_commit_body_regression(self):
+        # Exact message from 5593bd3 before the user-requested history rewrite.
+        message = ("feat(workflow-checks): 기술 조사·실험 규약과 검사 추가\n\n"
+                   "커밋 규칙, 문서 책임·목차·메타정보, 기록 검사기와 회귀 테스트 및 CI를 정의한다. "
+                   "기존 스프라이트 도구 조사는 제공 범위와 구현 근거를 기준으로 구성하고, 추가 기능 가설과 EPOCA 적용은 별도 개발 계획에 둔다. "
+                   "문서 15개 검사와 조사 기록·로컬 링크 검사 및 별도 문체·의미 검토를 완료했다. "
+                   "구현 테스트는 27개 통과, Windows 링크 생성 권한으로 1개 생략했다. 원격 CI는 미확인이다.")
+        self.assertTrue(CHECKER.valid_commit_title(message.splitlines()[0]))
+        self.assertIn("WFL006", [code for _, code, _ in CHECKER.check_commit_message(message)])
+
+    def test_full_message_in_git_range(self):
+        with workspace() as root:
+            git(root, "init", "-q")
+            git(root, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "Initial commit")
+            base = git(root, "rev-parse", "HEAD")
+            message = "docs: 기준 정의\n\n- 역할별 문서 위치 추가\n- 입력 경로 검사 통과"
+            git(root, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", message)
+            sha, actual = CHECKER.commit_messages(root, base, "HEAD")[0]
+            self.assertEqual(message, actual.strip())
+            self.assertEqual([], CHECKER.check_commit_message(actual))
+            self.assertEqual("docs: 기준 정의", CHECKER.commit_titles(root, base, "HEAD")[0][1])
+            bad = "docs: 오류 사례\n\n연결을 고쳤다. 검사도 했다."
+            git(root, "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", bad)
+            command = [sys.executable, str(SCRIPT), "--root", str(root), "--commit-base", base]
+            result = subprocess.run(command, env=ENV, capture_output=True, encoding="utf-8")
+            self.assertEqual(1, result.returncode)
+            self.assertIn("WFL006", result.stdout)
+            self.assertNotIn("WFL005", result.stdout)
+
+    def test_local_link_targets_and_anchors(self):
+        with workspace() as root:
+            write(root, "docs/target.md", "# 문서\n\n## 중복 제목\n\n## 중복 제목\n\n## `Code`와 **표현**\n\n<a id=\"custom-id\"></a>\n")
+            write(root, "docs/image.png", "synthetic")
+            write(root, "docs/file name.md", "# 공백 파일\n")
+            write(root, "docs/file(v1).md", "# 괄호 파일\n")
+            path = write(root, "docs/source.md", "# 원본\n\n"
+                         "[정상](target.md#중복-제목) [중복](target.md#중복-제목-1)\n"
+                         "[서식](target.md#code와-표현) [명시](target.md#custom-id)\n"
+                         "![이미지](image.png) [인코딩](file%20name.md) [공백](<file name.md>)\n"
+                         "[괄호](file(v1).md) [외부](https://example.com/missing.md#missing)\n"
+                         "[현재](#원본)\n")
+            self.assertEqual([], CHECKER.check_links(root, path))
+            for target in ("absent.md", "target.md#없는-절", "target.md#중복-제목-2", "../../outside.md"):
+                path.write_text(f"# 원본\n\n[오류]({target})\n", encoding="utf-8")
+                self.assertEqual("WFL007", CHECKER.check_links(root, path)[0][1])
+
+    def test_link_examples_are_ignored_and_prose_wrap_is_unrestricted(self):
+        with workspace() as root:
+            path = write(root, "README.md", "# 문서\n\n"
+                         "문장 하나다. 문장 둘이다.\n\n- 한 항목이다. 여러 문장이다.\n\n"
+                         "`[예시](missing.md)`\n\n```md\n[예시](missing.md)\n```\n"
+                         "<!-- [예시](missing.md) -->\n"
+                         "[참조형][missing]\n\n[missing]: missing.md\n")
+            self.assertEqual([], CHECKER.check_links(root, path))
+            path.write_text(path.read_text(encoding="utf-8") + "\n[실제](missing.md)\n", encoding="utf-8")
+            self.assertEqual(1, len(CHECKER.check_links(root, path)))
+
+    def test_markdown_discovery_and_link_cli(self):
+        with workspace() as root:
+            git(root, "init", "-q")
+            write(root, ".gitignore", ".cache/\n")
+            write(root, ".cache/ignored.md", "[ignored](missing.md)")
+            path = write(root, "README.md", "# 문서\n[broken](missing.md)\n")
+            self.assertEqual([path], CHECKER.markdown_files(root))
+            result = subprocess.run([sys.executable, str(SCRIPT), "--root", str(root)], env=ENV, capture_output=True, encoding="utf-8")
+            self.assertEqual(1, result.returncode)
+            self.assertIn("WFL007", result.stdout)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+# Reproducible downloads and intermediate files; retained evidence belongs in experiments/.
+/.cache/
+__pycache__/
+*.py[cod]

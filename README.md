@@ -18,7 +18,7 @@
 
 - [개인 색상 선택](specs/player-color/spec.md): 가입 시 색상 추첨과 확정 흐름 초안
 - [문서 표기 검사](specs/docs-style/spec.md): 표기 위반 자동 검사와 문체 검토 범위
-- [작업 기록 검사](specs/workflow-checks/spec.md): 조사·실험 기록과 커밋 제목 검사
+- [작업 기록 검사](specs/workflow-checks/spec.md): 조사·실험 기록과 커밋 메시지·문서 링크 검사
 
 ## Research
 
