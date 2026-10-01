@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -23,3 +24,10 @@ jobs:
         run: python tests/docs-style/test-check-docs.py
       - name: Check documentation
         run: python scripts/check-docs.py
+      - name: Test workflow checker
+        run: python tests/workflow-checks/test-check-workflow.py
+      - name: Check records and commit titles
+        env:
+          COMMIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          COMMIT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/check-workflow.py --commit-base "$COMMIT_BASE" --commit-head "$COMMIT_HEAD"

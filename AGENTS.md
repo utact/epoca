@@ -8,6 +8,7 @@
 | 게임 실험·플레이 테스트 | [게임 검증](docs/game/validation.md) |
 | 미결정 사항 확인 | [미결정 사항](docs/game/open-questions.md) |
 | 서버·하네스 설계 | [기술 방향](docs/engineering/strategy.md) |
+| 오픈소스 조사·비교 실험 | [기술 조사 및 실험 지침](docs/engineering/research.md)과 해당 주제의 조사 계획 |
 | 기능 구현·수정 | 해당 기능 명세와 구현 설계 |
 
 - 미결정 사항을 구현 편의에 따라 확정하지 않는다. 실험에 필요한 가정은 실험 기록에 표시한다.
