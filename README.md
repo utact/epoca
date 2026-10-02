@@ -23,3 +23,4 @@
 ## Research
 
 - [2D 스프라이트 도구 조사](research/sprite-tools/plan.md): 기존 도구의 목적·기능·구조·검증 방식
+- [2D 스프라이트 도구 비교](research/sprite-tools/report.md): 선정 도구의 분석 결과와 재사용 후보·후속 질문
