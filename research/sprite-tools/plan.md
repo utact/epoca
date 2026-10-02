@@ -5,8 +5,8 @@
 ```json
 {
   "schema_version": 1,
-  "recorded_at": "2026-10-02T00:56:18+09:00",
-  "status": "planned",
+  "recorded_at": "2026-10-02T15:37:37+09:00",
+  "status": "in-progress",
   "inputs": ["docs/engineering/research.md", "docs/engineering/sprite-development.md"]
 }
 ```
@@ -26,6 +26,31 @@
 널리 쓰이는 도구와 인기도·유지보수 활동을 확인할 수 있는 저장소부터 찾는다. 검색 날짜·검색어·범위·포함 및 제외 이유를 남긴다. 담당 기능, 실행 가능한 코드·예제·테스트, 코드·모델·에셋의 사용 조건도 확인한다. 스타 수만으로 품질이나 적합성을 판단하지 않는다.
 
 텍스트·참조 이미지 기반 생성, 시트 생성, 영상에서 프레임 추출, 프레임 편집, 리그·파츠 애니메이션, 이미지 처리, 아틀라스 패킹과 재생을 검색 범위로 둔다. 이는 탐색을 위한 작업 분류이며 도구 하나가 모두 제공해야 한다는 뜻은 아니다. 후보 이름과 개수는 검색 결과로 정한다.
+
+### 첫 조사 범위
+
+2026-10-02에 웹 검색과 GitHub 원본 저장소의 README·메타정보·기본 브랜치 커밋을 조회했다. 검색어는 `site:github.com sprite animation AI generator open source`, `site:github.com Pixelorama LibreSprite sprite editor`, `site:github.com rembg free texture packer spritesheet`, `site:github.com DragonBones PixiJS sprite animation`을 사용했다. 검색 결과의 누락을 줄이기 위해 Pixelorama·free-tex-packer-core·DragonBonesJS·PixiJS의 원본 저장소를 각각 추가 검색했다. 범용 생성 기반 후보인 ComfyUI·AnimateDiff도 원본 저장소를 직접 확인했다.
+
+아래 표는 생성·편집·처리·출력·재생 순서이며 같은 역할 안에서는 도구 이름순이다. 선정은 도입 결정이 아니라 코드 분석 대상의 선택이다. 첫 조사에서는 담당 기능이 다른 8개 저장소를 분석하고 4개를 보류한다. 검색 순위가 전체 생태계를 대표한다고 가정하지 않는다.
+
+| 담당 기능 | 후보 | 처리 | 근거 |
+| --- | --- | --- | --- |
+| 생성 기반 | [AnimateDiff](https://github.com/guoyww/AnimateDiff) | 보류 | 범용 모션 모듈과 스프라이트 후처리의 별도 구성 필요 |
+| 생성 기반 | [ComfyUI](https://github.com/Comfy-Org/ComfyUI) | 보류 | 범용 실행 기반과 구체적 워크플로의 구분 필요 |
+| 생성·후처리 | [sprite-gen](https://github.com/aldegad/sprite-gen) | 선정 | 상태별 시트 생성과 영상 기반 루프의 비교 및 동작 QA 코드 분석 |
+| 생성·리그·후처리 | [Sprite Studio](https://github.com/JohnKinyanjui/sprite-maker) | 선정 | 개체별 동작 계획과 품질 검사·수정 경로의 구현 확인 |
+| 생성·템플릿 | [Sprute](https://github.com/sprited-ai/sprute) | 선정 | 로컬 모델과 구동 모션에 기반한 다방향 생성 경로의 대조 |
+| 편집 | [Aseprite](https://github.com/aseprite/aseprite) | 보류 | 공개 소스와 재사용 가능한 오픈소스 라이선스의 구분 및 현행 사용 조건 확인 필요 |
+| 편집 | [LibreSprite](https://github.com/LibreSprite/LibreSprite) | 보류 | 첫 조사에서 Pixelorama를 분석하고 수동 편집 기준선의 대안으로 유지 |
+| 편집·출력 | [Pixelorama](https://github.com/Orama-Interactive/Pixelorama) | 선정 | 프레임·레이어 편집과 CLI 내보내기의 연결 확인 |
+| 배경 제거 | [rembg](https://github.com/danielgatis/rembg) | 선정 | 마스크 추론과 가장자리 처리의 분리 및 실패 시 대체 경로 확인 |
+| 패킹·출력 | [free-tex-packer-core](https://github.com/odrick/free-tex-packer-core) | 선정 | 크롭·회전·여백과 원본 크기 메타정보의 보존 확인 |
+| 리그 재생 | [DragonBonesJS](https://github.com/DragonBones/DragonBonesJS) | 선정 | 프레임 이미지 재생과 구별되는 스켈레탈 애니메이션 경로 확인 |
+| 프레임 재생 | [PixiJS](https://github.com/pixijs/pixijs) | 선정 | 아틀라스 해석과 프레임 시간·앵커·재생 이벤트의 연결 확인 |
+
+GitHub API의 `stargazers_count`·`archived`와 기본 브랜치 HEAD의 커미터 시각을 저장소별 분석에 기록한다. `pushed_at`은 마지막 커밋 시각으로 대신 쓰지 않는다. Sprute는 조회 시 스타 2개의 초기 프로젝트이며 인기 기준이 아닌 생성 경로의 차이를 이유로 선정했다. 다른 후보도 스타 수를 품질의 근거로 사용하지 않는다. 기본 브랜치의 고정 커밋 분석은 안정 배포판의 채택을 뜻하지 않는다.
+
+범용 생성 모델 전체와 플러그인 전체는 이번 조사에서 분석하지 않는다. ComfyUI는 Sprute가 사용하는 실행 기반으로 필요한 범위만 추적한다. 영상 디코더의 내부 구현과 별도 리그 편집기의 제작 과정은 후속 계약에서 의존성 확인 대상으로 남긴다. 후보의 테스트와 CI는 정의·호출 관계를 읽고 실제 실행 결과와 구별한다.
 
 ## 분석 기준
 
@@ -49,4 +74,4 @@
 
 선정·제외 이유와 고정 버전의 분석 근거가 있고, 담당 기능별 비교 및 미확인 사항을 조사 보고서에서 확인할 수 있어야 한다. AI 생성 경로뿐 아니라 편집·처리·출력·재생 단계의 조사 범위와 누락도 명시한다. 실행하지 않은 후보의 품질이나 성능은 판정하지 않는다.
 
-현재 후보 탐색은 미착수다. 다음 작업은 1단계의 후보 탐색이며, 자체 도구 개발 여부는 조사와 후속 실험의 근거로 결정한다.
+첫 조사 후보를 선정했다. 다음 작업은 2단계의 고정 버전 코드 분석이다. 이번 조사에서는 도구 설치·모델 다운로드·에셋 생성을 수행하지 않으며 출력 품질과 실행 성능을 미검증으로 남긴다. 자체 도구 개발 여부는 조사와 후속 실험의 근거로 결정한다.
