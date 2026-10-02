@@ -1,4 +1,6 @@
-# Reproducible downloads and intermediate files; retained evidence belongs in experiments/.
+# Project cache
 /.cache/
+
+# Python bytecode
 __pycache__/
 *.py[cod]
