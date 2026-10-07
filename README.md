@@ -3,6 +3,7 @@
 ## Game
 
 - [게임 설계](docs/game/design.md): 게임 목표와 규칙
+- [플레이 화면 목업](docs/game/play-screen.md): 하늘·땅·바다 권역의 픽셀 아트 화면 제안
 - [게임 검증](docs/game/validation.md): 실패 조건·검증 방법·측정 항목
 - [미결정 사항](docs/game/open-questions.md): 미결정 정책·수치·방식
 
